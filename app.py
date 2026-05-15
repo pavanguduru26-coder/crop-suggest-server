@@ -13,63 +13,62 @@ API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyCBCch_wDvMHzpBJmn-WIsj4x_9dFPE
 
 @app.route('/')
 def index():
-    return "Crop Suggestion Server is Live!"
+    return "Crop Suggestion Server is Live! v2"
 
-# ── Endpoint for Android App ──────────────────────────────────────────────────
 @app.route('/api/suggest', methods=['POST'])
 def api_suggest():
     try:
         data = request.json
         if not data:
-            return jsonify({"error": "No data received"}), 400
+            return jsonify({"error": "No data"}), 400
             
         client = genai.Client(api_key=API_KEY)
-
         has_image = bool(data.get('imageBase64'))
         
-        # Use a very short, specific prompt to ensure valid JSON
         prompt = f"""
-        Suggest TOP 3 crops for these metrics: N={data.get('n')}, P={data.get('p')}, K={data.get('k')}, 
+        Suggest TOP 3 crops: N={data.get('n')}, P={data.get('p')}, K={data.get('k')}, 
         Temp={data.get('temp')}C, Hum={data.get('hum')}%, pH={data.get('ph')}, Rain={data.get('rain')}mm.
-        {"Analyze the uploaded image as primary data." if has_image else ""}
-        
-        Return ONLY a JSON array with 'name', 'reason', and 'tip' keys. No markdown.
+        {"Analyze uploaded image." if has_image else ""}
+        Return ONLY a JSON array with 'name', 'reason', and 'tip'.
         """
 
         contents = [prompt]
-
         if has_image:
             try:
-                # Clean up base64 string
-                b64_data = data['imageBase64']
-                if "," in b64_data:
-                    b64_data = b64_data.split(",")[1]
-                image_bytes = base64.b64decode(b64_data)
-                img = Image.open(io.BytesIO(image_bytes))
+                b64 = data['imageBase64'].split(",")[-1]
+                img = Image.open(io.BytesIO(base64.b64decode(b64)))
                 contents.append(img)
-            except Exception as img_err:
-                print(f"Image processing error: {img_err}")
+            except: pass
 
-        # Call Gemini (using 1.5-flash as it's the most stable free model)
-        response = client.models.generate_content(
-            model='gemini-1.5-flash', 
-            contents=contents
-        )
+        # ── Model Fallback Logic ──────────────────────────────────────────────
+        # Try 2.0-flash first, then 1.5-flash if that fails
+        models_to_try = ['gemini-2.0-flash', 'gemini-1.5-flash']
+        response_text = ""
         
-        text = response.text.strip()
-        # Clean markdown if present
-        text = text.replace("```json", "").replace("```", "").strip()
+        for model_name in models_to_try:
+            try:
+                print(f"Trying model: {model_name}")
+                response = client.models.generate_content(model=model_name, contents=contents)
+                if response and response.text:
+                    response_text = response.text.strip()
+                    break
+            except Exception as e:
+                print(f"Model {model_name} failed: {e}")
+                continue
         
-        # Validate JSON
+        if not response_text:
+            return jsonify({"error": "AI models currently unavailable"}), 503
+
+        # Clean and Parse JSON
+        clean_json = response_text.replace("```json", "").replace("```", "").strip()
         try:
-            crops = json.loads(text)
-            return jsonify(crops)
+            return jsonify(json.loads(clean_json))
         except:
-            # Fallback if AI didn't return perfect JSON
-            return jsonify([{"name": "Rice", "reason": "Stable choice for your region.", "tip": "Maintain water levels."}])
+            # Absolute fallback if JSON parsing fails
+            return jsonify([{"name": "Rice", "reason": "Suitable for your humidity.", "tip": "Check water levels."}])
 
     except Exception as e:
-        print(f"CRITICAL ERROR: {str(e)}")
+        print(f"SERVER ERROR: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
