@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Crop Suggestion</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Marked.js for markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        :root {
+            --primary: #10B981;
+            --primary-hover: #059669;
+            --bg-color: #0f172a;
+            --surface-color: rgba(30, 41, 59, 0.7);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --error: #ef4444;
+            --border: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(16, 185, 129, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 85% 30%, rgba(59, 130, 246, 0.15) 0%, transparent 50%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 3rem 1rem;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 3rem;
+            animation: fadeInDown 0.8s ease-out;
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #34d399, #3b82f6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+            letter-spacing: -1px;
+        }
+
+        .header p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            max-width: 600px;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 2rem;
+            max-width: 1000px;
+            width: 100%;
+        }
+
+        @media (min-width: 768px) {
+            .container {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .card {
+            background: var(--surface-color);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            animation: fadeIn 1s ease-out forwards;
+            opacity: 0;
+        }
+
+        .card:nth-child(1) { animation-delay: 0.2s; }
+        .card:nth-child(2) { animation-delay: 0.4s; }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .input-group.full-width {
+            grid-column: 1 / -1;
+        }
+
+        label {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        input {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0.875rem 1rem;
+            color: white;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+            background: rgba(15, 23, 42, 0.8);
+        }
+
+        button {
+            background: linear-gradient(135deg, var(--primary), #047857);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 1rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.3);
+            margin-top: 1.5rem;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 20px -3px rgba(16, 185, 129, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .results-section {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .results-section h2 {
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .results-content {
+            flex-grow: 1;
+            background: rgba(15, 23, 42, 0.4);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid var(--border);
+            overflow-y: auto;
+            max-height: 500px;
+        }
+
+        .placeholder-text {
+            color: var(--text-secondary);
+            text-align: center;
+            margin-top: 40%;
+            transform: translateY(-50%);
+            font-style: italic;
+        }
+
+        .loader {
+            display: none;
+            width: 48px;
+            height: 48px;
+            border: 5px solid rgba(16, 185, 129, 0.2);
+            border-bottom-color: var(--primary);
+            border-radius: 50%;
+            display: inline-block;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        .loading-container {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 1rem;
+            color: var(--primary);
+        }
+
+        .error-message {
+            color: var(--error);
+            background: rgba(239, 68, 68, 0.1);
+            padding: 1rem;
+            border-radius: 8px;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            margin-bottom: 1rem;
+            display: none;
+        }
+
+        .markdown-body {
+            line-height: 1.6;
+        }
+        .markdown-body h1, .markdown-body h2, .markdown-body h3 {
+            margin-top: 1.5rem;
+            margin-bottom: 0.5rem;
+            color: #34d399;
+        }
+        .markdown-body ul, .markdown-body ol {
+            padding-left: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .markdown-body li {
+            margin-bottom: 0.5rem;
+        }
+        .markdown-body strong {
+            color: #fff;
+        }
+
+        @keyframes rotation {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .api-key-banner {
+            {% if not has_api_key %}
+            display: block;
+            {% else %}
+            display: none;
+            {% endif %}
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid var(--error);
+            color: #fca5a5;
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            max-width: 800px;
+            text-align: center;
+            width: 100%;
+        }
+
+        .api-key-banner strong {
+            color: var(--error);
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="api-key-banner">
+        <strong>Action Required:</strong> You are using the placeholder API key. Please open <code>app.py</code> and add your actual API key to line 7 for the system to work.
+    </div>
+
+    <div class="header">
+        <h1>Crop Suggestion System</h1>
+        <p>Enter your soil and environmental metrics to get expert agronomy recommendations instantly.</p>
+    </div>
+
+    <div class="container">
+        <!-- Form Card -->
+        <div class="card">
+            <form id="cropForm">
+                <div class="form-grid">
+                    <div class="input-group">
+                        <label for="nitrogen">Nitrogen (N)</label>
+                        <input type="number" id="nitrogen" value="90" required step="any">
+                    </div>
+                    <div class="input-group">
+                        <label for="phosphorus">Phosphorus (P)</label>
+                        <input type="number" id="phosphorus" value="42" required step="any">
+                    </div>
+                    <div class="input-group">
+                        <label for="potassium">Potassium (K)</label>
+                        <input type="number" id="potassium" value="43" required step="any">
+                    </div>
+                    <div class="input-group">
+                        <label for="ph">pH Level</label>
+                        <input type="number" id="ph" value="6.5" required step="0.1">
+                    </div>
+                    <div class="input-group full-width">
+                        <label for="temperature">Temperature (°C)</label>
+                        <input type="number" id="temperature" value="20.8" required step="0.1">
+                    </div>
+                    <div class="input-group full-width">
+                        <label for="humidity">Humidity (%)</label>
+                        <input type="number" id="humidity" value="82.0" required step="0.1">
+                    </div>
+                    <div class="input-group full-width">
+                        <label for="rainfall">Rainfall (mm)</label>
+                        <input type="number" id="rainfall" value="202.9" required step="0.1">
+                    </div>
+                    <div class="input-group full-width" style="margin-top: 0.5rem;">
+                        <label for="imageUpload">Upload Image of Land/Soil (Optional)</label>
+                        <input type="file" id="imageUpload" accept="image/*" style="padding: 0.5rem; background: rgba(15, 23, 42, 0.4);">
+                        <small style="color: var(--text-secondary); margin-top: 4px;">You can take a photo with your camera or select from gallery.</small>
+                    </div>
+                </div>
+                <button type="submit" id="submitBtn">Analyze Conditions</button>
+            </form>
+        </div>
+
+        <!-- Results Card -->
+        <div class="card results-section">
+            <h2>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                </svg>
+                AI Recommendation
+            </h2>
+            <div class="results-content" id="resultsContent">
+                <div class="placeholder-text" id="placeholder">
+                    Enter your metrics and click analyze to see recommendations here.
+                </div>
+                
+                <div class="loading-container" id="loader">
+                    <span class="loader"></span>
+                    <p>Consulting AI Agronomist...</p>
+                </div>
+
+                <div class="error-message" id="errorMsg"></div>
+                
+                <div class="markdown-body" id="suggestionBox" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('cropForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const btn = document.getElementById('submitBtn');
+            const placeholder = document.getElementById('placeholder');
+            const loader = document.getElementById('loader');
+            const errorMsg = document.getElementById('errorMsg');
+            const suggestionBox = document.getElementById('suggestionBox');
+
+            // UI State updates
+            btn.disabled = true;
+            btn.innerText = 'Analyzing...';
+            placeholder.style.display = 'none';
+            suggestionBox.style.display = 'none';
+            errorMsg.style.display = 'none';
+            loader.style.display = 'flex';
+
+            const data = {
+                nitrogen: parseFloat(document.getElementById('nitrogen').value),
+                phosphorus: parseFloat(document.getElementById('phosphorus').value),
+                potassium: parseFloat(document.getElementById('potassium').value),
+                ph: parseFloat(document.getElementById('ph').value),
+                temperature: parseFloat(document.getElementById('temperature').value),
+                humidity: parseFloat(document.getElementById('humidity').value),
+                rainfall: parseFloat(document.getElementById('rainfall').value)
+            };
+
+            const imageInput = document.getElementById('imageUpload');
+            if (imageInput.files && imageInput.files[0]) {
+                const reader = new FileReader();
+                reader.readAsDataURL(imageInput.files[0]);
+                reader.onload = async () => {
+                    data.image = reader.result;
+                    await sendRequest(data);
+                };
+                reader.onerror = (error) => {
+                    loader.style.display = 'none';
+                    errorMsg.innerText = 'Error reading image file.';
+                    errorMsg.style.display = 'block';
+                    btn.disabled = false;
+                    btn.innerText = 'Analyze Conditions';
+                };
+            } else {
+                await sendRequest(data);
+            }
+
+            async function sendRequest(payload) {
+                try {
+                    const response = await fetch('/suggest', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
+                const result = await response.json();
+
+                loader.style.display = 'none';
+
+                if (result.error) {
+                    errorMsg.innerText = result.error;
+                    errorMsg.style.display = 'block';
+                } else {
+                    // Convert markdown to HTML using marked.js
+                    suggestionBox.innerHTML = marked.parse(result.suggestion);
+                    suggestionBox.style.display = 'block';
+                }
+
+            } catch (error) {
+                loader.style.display = 'none';
+                errorMsg.innerText = 'A network error occurred. Ensure the server is running.';
+                errorMsg.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                btn.innerText = 'Analyze Conditions';
+            }
+            } // end sendRequest
+        });
+    </script>
+</body>
+</html>
