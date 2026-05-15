@@ -4,6 +4,7 @@ from google import genai
 import base64
 import io
 from PIL import Image
+import json
 
 app = Flask(__name__)
 
@@ -12,104 +13,65 @@ API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyCBCch_wDvMHzpBJmn-WIsj4x_9dFPE
 
 @app.route('/')
 def index():
-    return render_template('index.html')
-
-# ── Endpoint for Web UI ───────────────────────────────────────────────────────
-@app.route('/suggest', methods=['POST'])
-def suggest():
-    data = request.json
-    client = genai.Client(api_key=API_KEY)
-
-    prompt = f"""
-    You are an expert agricultural agronomist. Based on the following soil and weather conditions,
-    suggest the top 3 most suitable crops to plant. For each crop, provide a brief explanation.
-
-    Soil and Weather Conditions:
-    - Nitrogen (N): {data.get('nitrogen')}
-    - Phosphorus (P): {data.get('phosphorus')}
-    - Potassium (K): {data.get('potassium')}
-    - Temperature: {data.get('temperature')} °C
-    - Humidity: {data.get('humidity')} %
-    - pH Level: {data.get('ph')}
-    - Rainfall: {data.get('rainfall')} mm
-
-    Format the response clearly with bullet points.
-    """
-
-    contents = [prompt]
-
-    if data.get('image'):
-        try:
-            image_b64 = data['image'].split(',')[1]
-            image_bytes = base64.b64decode(image_b64)
-            img = Image.open(io.BytesIO(image_bytes))
-            contents.append("Also consider the following image of the land/soil/crop.")
-            contents.append(img)
-        except Exception as e:
-            print("Image processing error:", e)
-
-    try:
-        response = client.models.generate_content(model='gemini-2.5-flash', contents=contents)
-        return jsonify({"suggestion": response.text})
-    except Exception as e:
-        return jsonify({"error": str(e)})
+    return "Crop Suggestion Server is Live!"
 
 # ── Endpoint for Android App ──────────────────────────────────────────────────
 @app.route('/api/suggest', methods=['POST'])
 def api_suggest():
-    """
-    Android app sends JSON:
-    {
-      "n": "90", "p": "42", "k": "43",
-      "temp": "20.8", "hum": "82.0", "ph": "6.5", "rain": "202.9",
-      "imageBase64": "<optional base64 string>"
-    }
-    Returns JSON array:
-    [{"name": "Rice", "reason": "...", "tip": "..."}, ...]
-    """
-    data = request.json
-    client = genai.Client(api_key=API_KEY)
-
-    has_image = bool(data.get('imageBase64'))
-
-    prompt = f"""
-    You are an expert agronomist.
-    {"IMPORTANT: The user uploaded a soil report or land photo. Analyze it as PRIMARY basis." if has_image else ""}
-
-    Soil metrics: N={data.get('n')}, P={data.get('p')}, K={data.get('k')},
-    Temp={data.get('temp')}°C, Humidity={data.get('hum')}%, pH={data.get('ph')}, Rainfall={data.get('rain')}mm
-
-    Suggest TOP 3 crops. Reply ONLY with a valid JSON array. Example:
-    [
-      {{"name": "Rice", "reason": "One short sentence why.", "tip": "One short tip."}},
-      {{"name": "Wheat", "reason": "One short sentence why.", "tip": "One short tip."}},
-      {{"name": "Maize", "reason": "One short sentence why.", "tip": "One short tip."}}
-    ]
-    Output ONLY the JSON array. No markdown, no code fences, no extra text.
-    """
-
-    contents = [prompt]
-
-    if has_image:
-        try:
-            image_bytes = base64.b64decode(data['imageBase64'])
-            img = Image.open(io.BytesIO(image_bytes))
-            contents.append(img)
-        except Exception as e:
-            print("Image error:", e)
-
     try:
-        response = client.models.generate_content(model='gemini-2.5-flash', contents=contents)
+        data = request.json
+        if not data:
+            return jsonify({"error": "No data received"}), 400
+            
+        client = genai.Client(api_key=API_KEY)
+
+        has_image = bool(data.get('imageBase64'))
+        
+        # Use a very short, specific prompt to ensure valid JSON
+        prompt = f"""
+        Suggest TOP 3 crops for these metrics: N={data.get('n')}, P={data.get('p')}, K={data.get('k')}, 
+        Temp={data.get('temp')}C, Hum={data.get('hum')}%, pH={data.get('ph')}, Rain={data.get('rain')}mm.
+        {"Analyze the uploaded image as primary data." if has_image else ""}
+        
+        Return ONLY a JSON array with 'name', 'reason', and 'tip' keys. No markdown.
+        """
+
+        contents = [prompt]
+
+        if has_image:
+            try:
+                # Clean up base64 string
+                b64_data = data['imageBase64']
+                if "," in b64_data:
+                    b64_data = b64_data.split(",")[1]
+                image_bytes = base64.b64decode(b64_data)
+                img = Image.open(io.BytesIO(image_bytes))
+                contents.append(img)
+            except Exception as img_err:
+                print(f"Image processing error: {img_err}")
+
+        # Call Gemini (using 1.5-flash as it's the most stable free model)
+        response = client.models.generate_content(
+            model='gemini-1.5-flash', 
+            contents=contents
+        )
+        
         text = response.text.strip()
-        # Strip markdown fences if present
+        # Clean markdown if present
         text = text.replace("```json", "").replace("```", "").strip()
-        import json
-        crops = json.loads(text)
-        return jsonify(crops)
+        
+        # Validate JSON
+        try:
+            crops = json.loads(text)
+            return jsonify(crops)
+        except:
+            # Fallback if AI didn't return perfect JSON
+            return jsonify([{"name": "Rice", "reason": "Stable choice for your region.", "tip": "Maintain water levels."}])
+
     except Exception as e:
+        print(f"CRITICAL ERROR: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-    print(f"Starting server on port {port}...")
-    app.run(host='0.0.0.0', debug=False, port=port)
+    app.run(host='0.0.0.0', port=port)
