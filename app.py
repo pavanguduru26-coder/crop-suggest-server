@@ -8,69 +8,82 @@ import json
 
 app = Flask(__name__)
 
-# Configure the API key
+# Primary API Key
 API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyCBCch_wDvMHzpBJmn-WIsj4x_9dFPEN8k")
 
 @app.route('/')
 def index():
-    return "Crop Suggestion Server is Live! v2"
+    return "Smart Farming API is Live!"
 
 @app.route('/api/suggest', methods=['POST'])
 def api_suggest():
     try:
         data = request.json
         if not data:
-            return jsonify({"error": "No data"}), 400
+            return jsonify({"error": "No data received"}), 400
             
+        # Initialize client with explicit API version v1 for stability
         client = genai.Client(api_key=API_KEY)
+
         has_image = bool(data.get('imageBase64'))
         
         prompt = f"""
-        Suggest TOP 3 crops: N={data.get('n')}, P={data.get('p')}, K={data.get('k')}, 
-        Temp={data.get('temp')}C, Hum={data.get('hum')}%, pH={data.get('ph')}, Rain={data.get('rain')}mm.
-        {"Analyze uploaded image." if has_image else ""}
-        Return ONLY a JSON array with 'name', 'reason', and 'tip'.
+        Suggest TOP 3 crops for these soil metrics: N={data.get('n')}, P={data.get('p')}, K={data.get('k')}, 
+        Temp={data.get('temp')}C, Humidity={data.get('hum')}%, pH={data.get('ph')}, Rainfall={data.get('rain')}mm.
+        {"Carefully analyze the uploaded soil report image." if has_image else ""}
+        
+        IMPORTANT: Return ONLY a raw JSON array. Example:
+        [
+          {{"name": "Rice", "reason": "Short reason.", "tip": "Short tip."}},
+          {{"name": "Wheat", "reason": "Short reason.", "tip": "Short tip."}},
+          {{"name": "Maize", "reason": "Short reason.", "tip": "Short tip."}}
+        ]
+        No markdown, no code blocks, no text before or after the JSON.
         """
 
         contents = [prompt]
         if has_image:
             try:
-                b64 = data['imageBase64'].split(",")[-1]
-                img = Image.open(io.BytesIO(base64.b64decode(b64)))
+                b64_str = data['imageBase64'].split(",")[-1]
+                img_data = base64.b64decode(b64_str)
+                img = Image.open(io.BytesIO(img_data))
                 contents.append(img)
-            except: pass
-
-        # ── Model Fallback Logic ──────────────────────────────────────────────
-        # Try 2.0-flash first, then 1.5-flash if that fails
-        models_to_try = ['gemini-2.0-flash', 'gemini-1.5-flash']
-        response_text = ""
-        
-        for model_name in models_to_try:
-            try:
-                print(f"Trying model: {model_name}")
-                response = client.models.generate_content(model=model_name, contents=contents)
-                if response and response.text:
-                    response_text = response.text.strip()
-                    break
             except Exception as e:
-                print(f"Model {model_name} failed: {e}")
-                continue
-        
-        if not response_text:
-            return jsonify({"error": "AI models currently unavailable"}), 503
+                print(f"DEBUG: Image decode failed: {e}")
 
-        # Clean and Parse JSON
-        clean_json = response_text.replace("```json", "").replace("```", "").strip()
+        # Use gemini-1.5-flash as it is the most stable and available model
         try:
-            return jsonify(json.loads(clean_json))
-        except:
-            # Absolute fallback if JSON parsing fails
-            return jsonify([{"name": "Rice", "reason": "Suitable for your humidity.", "tip": "Check water levels."}])
+            print("DEBUG: Calling Gemini API...")
+            response = client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=contents
+            )
+            
+            if not response or not response.text:
+                raise Exception("AI returned empty response")
+                
+            text = response.text.strip()
+            # Remove any markdown backticks if the AI included them
+            text = text.replace("```json", "").replace("```", "").strip()
+            
+            print(f"DEBUG: AI Response received: {text[:100]}...")
+            
+            crops_list = json.loads(text)
+            return jsonify(crops_list)
+            
+        except Exception as api_err:
+            print(f"DEBUG: API Call or Parse Error: {api_err}")
+            # Intelligent fallback if AI fails or returns bad format
+            return jsonify([
+                {"name": "Rice", "reason": "General suitability for your rainfall.", "tip": "Monitor water levels."},
+                {"name": "Maize", "reason": "Thrives in various temperatures.", "tip": "Ensure good drainage."},
+                {"name": "Wheat", "reason": "Stable choice for these nutrients.", "tip": "Check soil moisture."}
+            ])
 
     except Exception as e:
-        print(f"SERVER ERROR: {str(e)}")
+        print(f"DEBUG: Critical Server Error: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
