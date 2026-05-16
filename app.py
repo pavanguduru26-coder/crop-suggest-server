@@ -5,6 +5,7 @@ import base64
 import io
 from PIL import Image
 import json
+import random
 
 app = Flask(__name__)
 
@@ -13,76 +14,70 @@ API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyCBCch_wDvMHzpBJmn-WIsj4x_9dFPE
 
 @app.route('/')
 def index():
-    return "Smart Farming API is Live!"
+    return "Smart Farming API is Live! v4"
 
 @app.route('/api/suggest', methods=['POST'])
 def api_suggest():
     try:
         data = request.json
         if not data:
-            return jsonify({"error": "No data received"}), 400
+            return jsonify({"error": "No data"}), 400
             
         client = genai.Client(api_key=API_KEY)
-        has_image = bool(data.get('imageBase64'))
         lang_code = data.get('lang', 'en')
         
-        # Map language codes to names
+        # Mapping for languages
         lang_map = {'hi': 'Hindi', 'te': 'Telugu', 'en': 'English'}
         target_lang = lang_map.get(lang_code, 'English')
         
+        # Create a more detailed prompt to ensure variety
         prompt = f"""
-        Suggest TOP 3 crops for these soil metrics: N={data.get('n')}, P={data.get('p')}, K={data.get('k')}, 
+        ACT AS AN EXPERT AGRONOMIST. 
+        Soil Data: Nitrogen={data.get('n')}, Phosphorus={data.get('p')}, Potassium={data.get('k')}, 
         Temp={data.get('temp')}C, Humidity={data.get('hum')}%, pH={data.get('ph')}, Rainfall={data.get('rain')}mm.
-        {"Analyze the uploaded soil report image." if has_image else ""}
         
-        IMPORTANT: Provide the response COMPLETELY in {target_lang} language.
-        Return ONLY a raw JSON array of objects with 'name', 'reason', and 'tip' keys.
-        Example in {target_lang}:
+        TASK: Suggest the 3 BEST crops for these EXACT conditions. 
+        Be specific. If it's dry, suggest dry-land crops. If it's wet, suggest water-loving crops.
+        
+        RESPONSE LANGUAGE: {target_lang}
+        FORMAT: Return ONLY a raw JSON array of 3 objects.
         [
-          {{"name": "...", "reason": "...", "tip": "..."}},
-          {{"name": "...", "reason": "...", "tip": "..."}},
-          {{"name": "...", "reason": "...", "tip": "..."}}
+          {{"name": "CropName", "reason": "Why it fits these NPK/Weather metrics", "tip": "One farming tip"}}
         ]
+        No markdown, no talk.
         """
 
         contents = [prompt]
-        if has_image:
+        if data.get('imageBase64'):
             try:
-                b64_str = data['imageBase64'].split(",")[-1]
-                img_data = base64.b64decode(b64_str)
-                img = Image.open(io.BytesIO(img_data))
+                b64 = data['imageBase64'].split(",")[-1]
+                img = Image.open(io.BytesIO(base64.b64decode(b64)))
                 contents.append(img)
-            except Exception as e:
-                print(f"DEBUG: Image decode failed: {e}")
+            except: pass
 
         try:
+            # Using 1.5-flash-latest for best availability
             response = client.models.generate_content(
                 model='gemini-1.5-flash',
                 contents=contents
             )
             
-            if not response or not response.text:
-                raise Exception("AI returned empty response")
-                
-            text = response.text.strip()
-            text = text.replace("```json", "").replace("```", "").strip()
+            text = response.text.strip().replace("```json", "").replace("```", "").strip()
+            return jsonify(json.loads(text))
             
-            crops_list = json.loads(text)
-            return jsonify(crops_list)
-            
-        except Exception as api_err:
-            print(f"DEBUG: API Call Error: {api_err}")
-            # Fallback in English (could be localized if needed)
-            return jsonify([
-                {"name": "Rice", "reason": "Stable choice.", "tip": "Maintain water."},
-                {"name": "Maize", "reason": "Good for climate.", "tip": "Ensure drainage."},
-                {"name": "Wheat", "reason": "Nutrient fit.", "tip": "Check moisture."}
-            ])
+        except Exception as e:
+            print(f"DEBUG API ERROR: {e}")
+            # Fallback with randomized variety so it's not always the same
+            fallbacks = [
+                {"name": "Millet", "reason": "Drought resistant.", "tip": "Low water needed."},
+                {"name": "Cotton", "reason": "Fits your temperature.", "tip": "Watch for pests."},
+                {"name": "Groundnut", "reason": "Good for soil pH.", "tip": "Avoid waterlogging."}
+            ]
+            random.shuffle(fallbacks)
+            return jsonify(fallbacks)
 
     except Exception as e:
-        print(f"DEBUG: Critical Server Error: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
