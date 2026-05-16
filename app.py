@@ -22,23 +22,27 @@ def api_suggest():
         if not data:
             return jsonify({"error": "No data received"}), 400
             
-        # Initialize client with explicit API version v1 for stability
         client = genai.Client(api_key=API_KEY)
-
         has_image = bool(data.get('imageBase64'))
+        lang_code = data.get('lang', 'en')
+        
+        # Map language codes to names
+        lang_map = {'hi': 'Hindi', 'te': 'Telugu', 'en': 'English'}
+        target_lang = lang_map.get(lang_code, 'English')
         
         prompt = f"""
         Suggest TOP 3 crops for these soil metrics: N={data.get('n')}, P={data.get('p')}, K={data.get('k')}, 
         Temp={data.get('temp')}C, Humidity={data.get('hum')}%, pH={data.get('ph')}, Rainfall={data.get('rain')}mm.
-        {"Carefully analyze the uploaded soil report image." if has_image else ""}
+        {"Analyze the uploaded soil report image." if has_image else ""}
         
-        IMPORTANT: Return ONLY a raw JSON array. Example:
+        IMPORTANT: Provide the response COMPLETELY in {target_lang} language.
+        Return ONLY a raw JSON array of objects with 'name', 'reason', and 'tip' keys.
+        Example in {target_lang}:
         [
-          {{"name": "Rice", "reason": "Short reason.", "tip": "Short tip."}},
-          {{"name": "Wheat", "reason": "Short reason.", "tip": "Short tip."}},
-          {{"name": "Maize", "reason": "Short reason.", "tip": "Short tip."}}
+          {{"name": "...", "reason": "...", "tip": "..."}},
+          {{"name": "...", "reason": "...", "tip": "..."}},
+          {{"name": "...", "reason": "...", "tip": "..."}}
         ]
-        No markdown, no code blocks, no text before or after the JSON.
         """
 
         contents = [prompt]
@@ -51,9 +55,7 @@ def api_suggest():
             except Exception as e:
                 print(f"DEBUG: Image decode failed: {e}")
 
-        # Use gemini-1.5-flash as it is the most stable and available model
         try:
-            print("DEBUG: Calling Gemini API...")
             response = client.models.generate_content(
                 model='gemini-1.5-flash',
                 contents=contents
@@ -63,21 +65,18 @@ def api_suggest():
                 raise Exception("AI returned empty response")
                 
             text = response.text.strip()
-            # Remove any markdown backticks if the AI included them
             text = text.replace("```json", "").replace("```", "").strip()
-            
-            print(f"DEBUG: AI Response received: {text[:100]}...")
             
             crops_list = json.loads(text)
             return jsonify(crops_list)
             
         except Exception as api_err:
-            print(f"DEBUG: API Call or Parse Error: {api_err}")
-            # Intelligent fallback if AI fails or returns bad format
+            print(f"DEBUG: API Call Error: {api_err}")
+            # Fallback in English (could be localized if needed)
             return jsonify([
-                {"name": "Rice", "reason": "General suitability for your rainfall.", "tip": "Monitor water levels."},
-                {"name": "Maize", "reason": "Thrives in various temperatures.", "tip": "Ensure good drainage."},
-                {"name": "Wheat", "reason": "Stable choice for these nutrients.", "tip": "Check soil moisture."}
+                {"name": "Rice", "reason": "Stable choice.", "tip": "Maintain water."},
+                {"name": "Maize", "reason": "Good for climate.", "tip": "Ensure drainage."},
+                {"name": "Wheat", "reason": "Nutrient fit.", "tip": "Check moisture."}
             ])
 
     except Exception as e:
