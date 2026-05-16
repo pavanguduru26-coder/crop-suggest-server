@@ -14,7 +14,7 @@ API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyCBCch_wDvMHzpBJmn-WIsj4x_9dFPE
 
 @app.route('/')
 def index():
-    return "Smart Farming API is Live! v4"
+    return "Smart Farming API is Live! v5"
 
 @app.route('/api/suggest', methods=['POST'])
 def api_suggest():
@@ -30,21 +30,21 @@ def api_suggest():
         lang_map = {'hi': 'Hindi', 'te': 'Telugu', 'en': 'English'}
         target_lang = lang_map.get(lang_code, 'English')
         
-        # Create a more detailed prompt to ensure variety
+        # Create an even more forceful prompt for translation
         prompt = f"""
-        ACT AS AN EXPERT AGRONOMIST. 
-        Soil Data: Nitrogen={data.get('n')}, Phosphorus={data.get('p')}, Potassium={data.get('k')}, 
-        Temp={data.get('temp')}C, Humidity={data.get('hum')}%, pH={data.get('ph')}, Rainfall={data.get('rain')}mm.
+        YOU ARE AN EXPERT INDIAN AGRONOMIST. 
+        Soil Data: N={data.get('n')}, P={data.get('p')}, K={data.get('k')}, 
+        Temp={data.get('temp')}C, Humidity={data.get('hum')}%, pH={data.get('ph')}, Rain={data.get('rain')}mm.
         
-        TASK: Suggest the 3 BEST crops for these EXACT conditions. 
-        Be specific. If it's dry, suggest dry-land crops. If it's wet, suggest water-loving crops.
+        CRITICAL INSTRUCTION: Your entire response MUST be in the {target_lang} language. 
+        The crop "name", the "reason", and the "tip" MUST ALL BE WRITTEN IN {target_lang} SCRIPT.
         
-        RESPONSE LANGUAGE: {target_lang}
-        FORMAT: Return ONLY a raw JSON array of 3 objects.
+        Example for {target_lang}:
         [
-          {{"name": "CropName", "reason": "Why it fits these NPK/Weather metrics", "tip": "One farming tip"}}
+          {{"name": "[Name in {target_lang}]", "reason": "[Reason in {target_lang}]", "tip": "[Tip in {target_lang}]"}}
         ]
-        No markdown, no talk.
+        
+        Return ONLY the raw JSON array.
         """
 
         contents = [prompt]
@@ -56,7 +56,6 @@ def api_suggest():
             except: pass
 
         try:
-            # Using 1.5-flash-latest for best availability
             response = client.models.generate_content(
                 model='gemini-1.5-flash',
                 contents=contents
@@ -66,15 +65,13 @@ def api_suggest():
             return jsonify(json.loads(text))
             
         except Exception as e:
-            print(f"DEBUG API ERROR: {e}")
-            # Fallback with randomized variety so it's not always the same
-            fallbacks = [
-                {"name": "Millet", "reason": "Drought resistant.", "tip": "Low water needed."},
-                {"name": "Cotton", "reason": "Fits your temperature.", "tip": "Watch for pests."},
-                {"name": "Groundnut", "reason": "Good for soil pH.", "tip": "Avoid waterlogging."}
-            ]
-            random.shuffle(fallbacks)
-            return jsonify(fallbacks)
+            # Localized Fallback
+            if lang_code == 'hi':
+                return jsonify([{"name": "चावल", "reason": "उपयुक्त मिट्टी।", "tip": "पानी का ध्यान रखें।"}])
+            elif lang_code == 'te':
+                return jsonify([{"name": "వరి", "reason": "అనుకూలమైన నేల.", "tip": "నీటిని పర్యవేక్షించండి."}])
+            else:
+                return jsonify([{"name": "Rice", "reason": "Suitable soil.", "tip": "Monitor water."}])
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
